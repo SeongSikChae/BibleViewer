@@ -10,21 +10,13 @@
 
 	<ItemGroup>
 		<Folder Include="Data\" />
-		<Folder Include="Migrations\" />
+		<Folder Include="Query\" />
+		<Folder Include="Store\" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<PackageReference Include="LevelDB.Standard" Version="2.1.6.1" />
-		<PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.2">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
+		<PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00017" />
 	</ItemGroup>
 
 	<Target Name="PreBuild" BeforeTargets="PreBuildEvent">
