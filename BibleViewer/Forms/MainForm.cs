@@ -1,342 +1,230 @@
 ﻿using BibleViewer.Context;
-using BibleViewer.Query;
+using BibleViewer.Entity;
 using BibleViewer.Store;
-using LevelDB;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Text;
+using System.Revision;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace BibleViewer.Forms
 {
-    public partial class MainForm : Form
-    {
-        public MainForm()
-        {
-            InitializeComponent();
-            DbContextOptionsBuilder<BibleContext> dbContextOptionsBuilder = new DbContextOptionsBuilder<BibleContext>().UseSqlite("Data Source=Bible.sqlite");
-            long start = DateTime.Now.ToMilliseconds();
-            context = new BibleContext(dbContextOptionsBuilder.Options);
-            long end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"Context Initialized. {TimeSpan.FromMilliseconds(end - start)}");
-            displayForm = new DisplayForm(context);
-            Task.Run(async () =>
-            {
-                await Initialize();
-            });
-        }
+	public partial class MainForm : Form
+	{
+		public MainForm(BibleContext context, IServiceProvider serviceProvider)
+		{
+			this.context = context;
+			this.serviceProvider = serviceProvider;
+			InitializeComponent();
+			displayBox.DataSource = Screen.AllScreens.ToList();
+			_ = InitializeAsync();
+		}
 
-        readonly BibleContext context;
-        readonly DisplayForm displayForm;
-        private readonly DirectoryInfo storeDir = new DirectoryInfo("store");
-        private IIndexStore chapterStore;
-        private IIndexStore bibleStore;
-        private LevelDB.DB levelDb;
+		private readonly BibleContext context;
+		private readonly IServiceProvider serviceProvider;
+		private static readonly Regex SearchPattern = new Regex("(?<Subject>\\S+) (?<Chapter>\\d+):(?<StartLine>\\d+)-(?<EndLine>\\d+)");
+		private static readonly Regex SearchPattern2 = new Regex("(?<Subject>\\S+) (?<Chapter>\\d+):(?<Line>\\d+)");
 
-        private async Task Initialize()
-        {
-            long start = DateTime.Now.ToMilliseconds();
-            await context.Database.MigrateAsync();
-            InitializeStore();
-            long end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"Migrated. {TimeSpan.FromMilliseconds(end - start)}");
+		private async Task InitializeAsync()
+		{
+			{
+				List<BibleType> list = await context.BibleType.OrderBy(p => p.Index).ToListAsync();
+				bibleTypeBox.DataSource = list;
+			}
 
-            start = DateTime.Now.ToMilliseconds();
-            bibleTypeBox.Invoke(() =>
-            {
-                bibleTypeBox.DataSource = context.BibleType.ToList();
-            });
-            end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"BibleType Initialized. {TimeSpan.FromMilliseconds(end - start)}");
+			{
+				List<BibleSubject> list = await context.BibleSubject.OrderBy(p => p.Index).ToListAsync();
+				subjectBox.DataSource = list;
+			}
+		}
 
-            start = DateTime.Now.ToMilliseconds();
-            subjectBox.Invoke(() =>
-            {
-                subjectBox.DataSource = context.BibleSubject.OrderBy(item => item.BibleSubjectKey).ToList();
-            });
-            end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"Subject Initialized. {TimeSpan.FromMilliseconds(end - start)}");
+		private void ToolStripMenuItem1_Click(object sender, EventArgs e)
+		{
+			MessageBox.Show($"BibleViewer: {RevisionUtil.GetRevision<RevisionAttribute>()}", "버전");
+		}
 
-            start = DateTime.Now.ToMilliseconds();
-            displayBox.Invoke(() =>
-            {
-                displayBox.DataSource = Screen.AllScreens.ToList();
-            });
-            end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"Display Initialized. {TimeSpan.FromMilliseconds(end - start)}");
-        }
+		private void SearchMode_CheckedChanged(object sender, EventArgs e)
+		{
+			if (chkSearchMode.Checked)
+			{
+				txtSearchBox.Enabled = true;
+				subjectBox.Enabled = false;
+				startChapterBox.Enabled = false;
+				endChapterBox.Enabled = false;
+				startLineBox.Enabled = false;
+				endLineBox.Enabled = false;
+			}
+			else
+			{
+				txtSearchBox.Enabled = false;
+				subjectBox.Enabled = true;
+				startChapterBox.Enabled = true;
+				endChapterBox.Enabled = true;
+				startLineBox.Enabled = true;
+				endLineBox.Enabled = true;
+			}
+		}
 
-        private void InitializeStore()
-        {
-            StoreMigration migration = new StoreMigration();
-            migration.Initialize(context);
-            Action<StoreMigrationData> act = (d) => { };
+		private void SubjectBox_SelectedIndexChanged(object sender, EventArgs e)
+		{
+			BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
+			BibleSubject bibleSubject = (BibleSubject)subjectBox.SelectedItem;
+			using IBibleStore store = BlbleStoreFactory.Create(new System.IO.DirectoryInfo(IBibleStore.STORE_PATH), bibleType, bibleSubject);
+			startChapterBox.DataSource = store.GetChaters().ToList();
+		}
 
-            {
-                DirectoryInfo rawStoreDir = storeDir.CreateSubdirectory("raw");
-                levelDb = new LevelDB.DB(new LevelDB.Options
-                {
-                    CreateIfMissing = true
-                }, rawStoreDir.FullName);
-            }
+		private void StartChapterBox_SelectedIndexChanged(object sender, EventArgs e)
+		{
+			List<BibleChapter> list = (List<BibleChapter>)startChapterBox.DataSource;
+			BibleChapter bibleChapter = (BibleChapter)startChapterBox.SelectedItem;
+			startLineBox.DataSource = bibleChapter.Lines.ToList();
+			endChapterBox.DataSource = list.Where(item => item.Value >= bibleChapter.Value).ToList();
+		}
 
-            {
-                DirectoryInfo chapterStoreDir = storeDir.CreateSubdirectory("chapter");
-                IndexStoreBuilder builder = new IndexStoreBuilder();
-                chapterStore = builder.SetReadOnly(chapterStoreDir.Exists && chapterStoreDir.EnumerateFiles().Count() > 0).Build(chapterStoreDir);
-                if (!chapterStore.ReadOnly)
-                {
-                    ChapterStoreMigrator migrator = new ChapterStoreMigrator();
-                    migrator.Initialize(chapterStore);
-                    act += migrator.Migrate;
-                }
-            }
+		private void EndChapterBox_SelectedIndexChanged(object sender, EventArgs e)
+		{
+			BibleChapter startBibleChater = (BibleChapter)startChapterBox.SelectedItem;
+			BibleChapter endBibleChater = (BibleChapter)endChapterBox.SelectedItem;
+			if (startBibleChater.Value == endBibleChater.Value)
+				StartLineBox_SelectedIndexChanged(startLineBox, e);
+			else
+				endLineBox.DataSource = endBibleChater.Lines.ToList();
+		}
 
-            {
-                DirectoryInfo bibleStoreDir = storeDir.CreateSubdirectory("bible");
-                IndexStoreBuilder builder = new IndexStoreBuilder();
-                bibleStore = builder.SetReadOnly(bibleStoreDir.Exists && bibleStoreDir.EnumerateFiles().Count() > 0).Build(bibleStoreDir);
-                if (!bibleStore.ReadOnly)
-                {
-                    BibleStoreMigrator migrator = new BibleStoreMigrator();
-                    migrator.Initialize(bibleStore, levelDb);
-                    act += migrator.Migrate;
-                }
-            }
+		private void StartLineBox_SelectedIndexChanged(object sender, EventArgs e)
+		{
+			BibleChapter startBibleChater = (BibleChapter)startChapterBox.SelectedItem;
+			BibleChapter endBibleChater = (BibleChapter)endChapterBox.SelectedItem;
+			if (endBibleChater is not null && startBibleChater.Value == endBibleChater.Value)
+			{
+				List<int> list = (List<int>)startLineBox.DataSource;
+				endLineBox.DataSource = list.Where(item => item >= (int)startLineBox.SelectedItem).ToList();
+			}
+		}
 
-            migration.Migration(act);
-            if (!chapterStore.ReadOnly)
-            {
-                chapterStore.Commit();
-                chapterStore.ForceMerge(1);
-            }
-            if (!bibleStore.ReadOnly)
-            {
-                bibleStore.Commit();
-                bibleStore.ForceMerge(1);
-            }
-        }
+		private void FullScreenMode_CheckedChanged(object sender, EventArgs e)
+		{
+			if (chkFullSize.Checked)
+			{
+				txtXPixel.Enabled = false;
+				txtYPixel.Enabled = false;
+			}
+			else
+			{
+				txtXPixel.Enabled = true;
+				txtYPixel.Enabled = true;
+				Screen screen = (Screen)displayBox.SelectedItem;
+				txtXPixel.Text = screen.Bounds.Width.ToString();
+				txtYPixel.Text = screen.Bounds.Height.ToString();
+			}
+		}
 
-        private void ComboBox_SelectedIndexChanged(object sender, System.EventArgs e)
-        {
-            long start = DateTime.Now.ToMilliseconds();
-            switch ((sender as ComboBox).Tag as string)
-            {
-                case "1":
-                    {
-                        List<int> list = new List<int>();
-                        int subjectKey = (int)(sender as ComboBox).SelectedValue;
-                        chapterStore.Search(new NamedSearchQuery("BibleSubjectKey", new TermSearchQuery($"{subjectKey}")), (doc) =>
-                        {
-                            int? chapterNumber = doc.GetField("ChapterNumber").GetInt32Value();
-                            if (chapterNumber.HasValue)
-                                list.Add(chapterNumber.Value);
-                        });
-                        startChapterBox.DataSource = list;
-                    }
-                    break;
-                case "2":
-                    {
-                        List<int> lineList = new List<int>();
-                        List<AndSearchQuery.AndSearchItem> list = new List<AndSearchQuery.AndSearchItem>();
-                        list.Add(new AndSearchQuery.AndSearchItem(false, new NamedSearchQuery("BibleSubjectKey", new TermSearchQuery(subjectBox.SelectedValue.ToString()))));
-                        list.Add(new AndSearchQuery.AndSearchItem(false, new NamedSearchQuery("ChapterNumber", new TermSearchQuery(startChapterBox.SelectedValue.ToString()))));
-                        AndSearchQuery q = new AndSearchQuery(new NamedSearchQuery("BibleTypeKey", new TermSearchQuery(bibleTypeBox.SelectedValue.ToString())), list);
-                        bibleStore.Search(q, (doc) =>
-                        {
-                            int? lineNumber = doc.GetField("LineNumber").GetInt32Value();
-                            if (lineNumber.HasValue)
-                                lineList.Add(lineNumber.Value);
-                        });
-                        startLineBox.DataSource = lineList;
-                    }
-                    endChapterBox.DataSource = (startChapterBox.DataSource as IEnumerable<int>).Where(item => item >= (int)(sender as ComboBox).SelectedValue).ToList();
-                    break;
-                case "3":
-                case "4":
-                    if (endChapterBox.SelectedValue != null && (int)startChapterBox.SelectedValue == (int)endChapterBox.SelectedValue)
-                    {
-                        endLineBox.DataSource = (startLineBox.DataSource as IEnumerable<int>).Where(item => item >= (int)startLineBox.SelectedValue).ToList();
-                    }
-                    else if (endChapterBox.SelectedValue != null)
-                    {
-                        List<int> lineList = new List<int>();
-                        List<AndSearchQuery.AndSearchItem> list = new List<AndSearchQuery.AndSearchItem>();
-                        list.Add(new AndSearchQuery.AndSearchItem(false, new NamedSearchQuery("BibleSubjectKey", new TermSearchQuery(subjectBox.SelectedValue.ToString()))));
-                        list.Add(new AndSearchQuery.AndSearchItem(false, new NamedSearchQuery("ChapterNumber", new TermSearchQuery(endChapterBox.SelectedValue.ToString()))));
-                        AndSearchQuery q = new AndSearchQuery(new NamedSearchQuery("BibleTypeKey", new TermSearchQuery(bibleTypeBox.SelectedValue.ToString())), list);
-                        bibleStore.Search(q, (doc) =>
-                        {
-                            int? lineNumber = doc.GetField("LineNumber").GetInt32Value();
-                            if (lineNumber.HasValue)
-                                lineList.Add(lineNumber.Value);
-                        });
-                        endLineBox.DataSource = lineList;
-                    }
-                    break;
-            }
-            long end = DateTime.Now.ToMilliseconds();
-            Console.WriteLine($"ComboBox: {sender} SelectedIndexChanged. {TimeSpan.FromMilliseconds(end - start)}");
-        }
+		private void ShorButton_Click(object sender, EventArgs e)
+		{
+			SortedSet<BibleBody> bibleBodies = new SortedSet<BibleBody>();
+			BibleSubject bibleSubject = null;
+			if (chkSearchMode.Checked)
+			{
+				Match match = SearchPattern.Match(txtSearchBox.Text);
+				Match match2 = SearchPattern2.Match(txtSearchBox.Text);
+				if (match.Success)
+				{
+					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
+					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value));
+					if (bibleSubject is null)
+						return;
+					int chapter = int.Parse(match.Groups["Chapter"].Value);
+					int startLine = int.Parse(match.Groups["StartLine"].Value);
+					int endLine = int.Parse(match.Groups["EndLine"].Value);
+					ISearchQuery q = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(chapter, chapter, true, true));
+					q = new ISearchQuery.BooleanAndQuery(q, new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery(startLine, endLine, true, true)));
+					using IBibleStore store = BlbleStoreFactory.Create(new System.IO.DirectoryInfo(IBibleStore.STORE_PATH), bibleType, bibleSubject);
+					bibleBodies = store.Search(q);
+				}
+				else if (match2.Success)
+				{
+					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
+					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value));
+					if (bibleSubject is null)
+						return;
+					int chapter = int.Parse(match.Groups["Chapter"].Value);
+					int line = int.Parse(match.Groups["Line"].Value);
+					ISearchQuery q = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(chapter, chapter, true, true));
+					q = new ISearchQuery.BooleanAndQuery(q, new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery(line, line, true, true)));
+					using IBibleStore store = BlbleStoreFactory.Create(new System.IO.DirectoryInfo(IBibleStore.STORE_PATH), bibleType, bibleSubject);
+					bibleBodies = store.Search(q);
+				}
+			}
+			else
+			{
+				ISearchQuery q;
+				if (startChapterBox.SelectedValue.Equals(endChapterBox.SelectedValue))
+				{
+					q = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery((int)startChapterBox.SelectedValue, (int)startChapterBox.SelectedValue, true, true));
+					q = new ISearchQuery.BooleanAndQuery(q, new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery((int)startLineBox.SelectedItem, (int)endLineBox.SelectedItem, true, true)));
+				}
+				else
+				{
+					int startChapter = ((BibleChapter)startChapterBox.SelectedItem).Value;
+					int endChapter = ((BibleChapter)endChapterBox.SelectedItem).Value;
 
+					{
+						ISearchQuery l = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(startChapter, startChapter, true, true));
+						ISearchQuery r = new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery((int)startLineBox.SelectedValue, null, true, false));
+						q = new ISearchQuery.BooleanAndQuery(l, r);
+					}
 
-        private void Button_Click(object sender, System.EventArgs e)
-        {
-            if (displayForm.CurrentChapter != null)
-            {
-                displayForm.CurrentChapter = null;
-            }
+					for (int chapter = startChapter + 1; chapter < endChapter; chapter++)
+						q = new ISearchQuery.BooleanOrQuery(q, new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(chapter, chapter, true, true)));
 
-            LinkedList<BibleChapter> chapters = new LinkedList<BibleChapter>();
-            LinkedListNode<BibleChapter> chapterNode = null;
-            List<BibleChapter> list = new List<BibleChapter>();
+					{
+						ISearchQuery l = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(endChapter, endChapter, true, true));
+						ISearchQuery r = new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery(null, (int)endLineBox.SelectedValue, false, true));
+						q = new ISearchQuery.BooleanOrQuery(q, new ISearchQuery.BooleanAndQuery(l, r));
+					}
+				}
 
-            if (chkSearchMode.Checked)
-            {
-                SearchQueryParser parser = new SearchQueryParser();
-                AndSearchQuery q = AndSearchQuery.And(new NamedSearchQuery("BibleTypeKey", new TermSearchQuery(bibleTypeBox.SelectedValue.ToString())), parser.Parse(txtSearchBox.Text));
-                bibleStore.Search(q, (doc) =>
-                {
-                    string id = doc.GetField(IIndexStore.ID_FIELD_NAME).GetStringValue();
-                    string body = levelDb.Get(id);
-                    BibleChapter chapter = new BibleChapter();
-                    chapter.BibleType = doc.GetField("BibleTypeKey").GetInt32Value().Value;
-                    chapter.BibleSubject = doc.GetField("BibleSubjectKey").GetInt32Value().Value;
-                    chapter.ChapterNumber = doc.GetField("ChapterNumber").GetInt32Value().Value;
-                    chapter.LineNumber = doc.GetField("LineNumber").GetInt32Value().Value;
-                    chapter.Body = body;
-                    list.Add(chapter);
-                });
-            }
-            else
-            {
-                AndSearchQuery q = AndSearchQuery.And(new NamedSearchQuery("BibleTypeKey", new TermSearchQuery(bibleTypeBox.SelectedValue.ToString())), new NamedSearchQuery("BibleSubjectKey", new TermSearchQuery(subjectBox.SelectedValue.ToString())));
-                if (startChapterBox.SelectedValue.Equals(endChapterBox.SelectedValue))
-                {
-                    q = AndSearchQuery.And(q, new NamedSearchQuery("ChapterNumber", new TermSearchQuery(startChapterBox.SelectedValue.ToString())));
-                    q = AndSearchQuery.And(q, new NamedSearchQuery("LineNumber", new RangeSearchQuery(startLineBox.SelectedValue.ToString(), endLineBox.SelectedValue.ToString(), true, true)));
-                }
-                else
-                {
-                    AndSearchQuery l = AndSearchQuery.And(new NamedSearchQuery("ChapterNumber", new TermSearchQuery(startChapterBox.SelectedValue.ToString())), new NamedSearchQuery("LineNumber", new RangeSearchQuery(startLineBox.SelectedValue.ToString(), int.MaxValue.ToString(), true, true)));
-                    AndSearchQuery r = AndSearchQuery.And(new NamedSearchQuery("ChapterNumber", new TermSearchQuery(endChapterBox.SelectedValue.ToString())), new NamedSearchQuery("LineNumber", new RangeSearchQuery(0.ToString(), endLineBox.SelectedValue.ToString(), true, true)));
-                    q = AndSearchQuery.And(q, OrSearchQuery.Or(l, r));
-                }
-                bibleStore.Search(q, (doc) =>
-                {
-                    string id = doc.GetField(IIndexStore.ID_FIELD_NAME).GetStringValue();
-                    string body = levelDb.Get(id);
-                    BibleChapter chapter = new BibleChapter();
-                    chapter.BibleType = doc.GetField("BibleTypeKey").GetInt32Value().Value;
-                    chapter.BibleSubject = doc.GetField("BibleSubjectKey").GetInt32Value().Value;
-                    chapter.ChapterNumber = doc.GetField("ChapterNumber").GetInt32Value().Value;
-                    chapter.LineNumber = doc.GetField("LineNumber").GetInt32Value().Value;
-                    chapter.Body = body;
-                    list.Add(chapter);
-                });
-            }
+				BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
+				bibleSubject = (BibleSubject)subjectBox.SelectedItem;
+				using IBibleStore store = BlbleStoreFactory.Create(new System.IO.DirectoryInfo(IBibleStore.STORE_PATH), bibleType, bibleSubject);
+				bibleBodies = store.Search(q);
+			}
 
-            list.Sort((l, r) =>
-            {
-                int v = l.BibleSubject - r.BibleSubject;
-                if (v != 0)
-                    return v;
-                v = l.ChapterNumber - r.ChapterNumber;
-                if (v != 0)
-                    return v;
-                return l.LineNumber - r.LineNumber;
-            });
-            foreach (BibleChapter chapter in list)
-            {
-                if (chapters.First is null)
-                    chapterNode = chapters.AddFirst(chapter);
-                else
-                    chapterNode = chapters.AddAfter(chapterNode, chapter);
-            }
+			if (bibleBodies.Count == 0)
+				return;
+			LinkedList<BibleBody> list = new LinkedList<BibleBody>();
+			LinkedListNode<BibleBody> node = null;
+			foreach (BibleBody b in bibleBodies)
+			{
+				if (list.First is null)
+					node = list.AddFirst(b);
+				else
+					node = list.AddAfter(node, b);
+			}
 
-            displayForm.CurrentChapter = chapters.First;
-            if (chkFullSize.Checked)
-            {
-                displayForm.SetDisplaySize(displayBox.SelectedItem as Screen);
-                displayForm.FormBorderStyle = FormBorderStyle.None;
-            }
-            else
-            {
-                int x = ((displayBox.SelectedItem as Screen).Bounds.Width / 4);
-                int y = ((displayBox.SelectedItem as Screen).Bounds.Height / 4);
-                displayForm.SetDisplaySize(x, y, int.Parse(txtXPixel.Text), int.Parse(txtYPixel.Text));
-                displayForm.FormBorderStyle = FormBorderStyle.FixedSingle;
-
-            }
-            displayForm.SetFontSize((int)fontSizeBox.Value);
-            displayForm.TopMost = true;
-            displayForm.Show();
-        }
-
-        private void CheckBox_CheckedChanged(object sender, EventArgs e)
-        {
-            switch ((sender as CheckBox).Tag)
-            {
-                case "0":
-                    if ((sender as CheckBox).Checked)
-                    {
-                        txtXPixel.Enabled = false;
-                        txtYPixel.Enabled = false;
-                    }
-                    else
-                    {
-                        txtXPixel.Enabled = true;
-                        txtYPixel.Enabled = true;
-                        txtXPixel.Text = (displayBox.SelectedItem as Screen).Bounds.Width.ToString();
-                        txtYPixel.Text = (displayBox.SelectedItem as Screen).Bounds.Height.ToString();
-                    }
-                    break;
-                case "1":
-                    if ((sender as CheckBox).Checked)
-                    {
-                        txtSearchBox.Enabled = true;
-                        subjectBox.Enabled = false;
-                        startChapterBox.Enabled = false;
-                        endChapterBox.Enabled = false;
-                        startLineBox.Enabled = false;
-                        endLineBox.Enabled = false;
-                    }
-                    else
-                    {
-                        txtSearchBox.Enabled = false;
-                        subjectBox.Enabled = true;
-                        startChapterBox.Enabled = true;
-                        endChapterBox.Enabled = true;
-                        startLineBox.Enabled = true;
-                        endLineBox.Enabled = true;
-                    }
-                    break;
-            }
-        }
-
-        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            if (levelDb is not null)
-                levelDb.Close();
-
-            if (chapterStore is not null)
-                chapterStore.Close();
-
-            if (bibleStore is not null)
-                bibleStore.Close();
-
-            context.Dispose();
-        }
-
-        private void ToolStripMenuItem1_Click(object sender, EventArgs e)
-        {
-            MessageBox.Show($"BibleViewer: {RevisionUtil.GetRevisoin<BibleViewer.RevisionAttribute>()}", "버전");
-        }
-    }
+			DisplayForm displayForm = serviceProvider.GetRequiredService<DisplayForm>();
+			displayForm.CurrentNode = list.First;
+			displayForm.Subject = bibleSubject;
+			Screen screen = (Screen)displayBox.SelectedItem;
+			if (chkFullSize.Checked)
+			{
+				displayForm.SetDisplaySize(screen);
+				displayForm.FormBorderStyle = FormBorderStyle.None;
+			}
+			else
+			{
+				int x = screen.Bounds.Width / 4;
+				int y = screen.Bounds.Height / 4;
+				displayForm.SetDisplaySize(x, y, int.Parse(txtXPixel.Text), int.Parse(txtYPixel.Text));
+				displayForm.FormBorderStyle = FormBorderStyle.FixedSingle;
+			}
+			displayForm.SetFontSize((int)fontSizeBox.Value);
+			displayForm.TopMost = true;
+			displayForm.ShowDialog();
+		}
+	}
 }

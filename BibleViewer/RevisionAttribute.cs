@@ -1,16 +1,11 @@
 ﻿using System;
-using System.Reflection;
+using System.Revision;
 
 namespace BibleViewer
 {
-    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
-    public class RevisionAttribute : Attribute, IRevisionAttribute
-    {
-        public RevisionAttribute(string revision)
-        {
-            Revision = revision;
-        }
-
-        public string Revision { get; }
-    }
+	[AttributeUsage(AttributeTargets.Assembly, AllowMultiple = false, Inherited = false)]
+	public class RevisionAttribute(string revision) : Attribute, IRevision
+	{
+		public string Revision { get; } = revision;
+	}
 }
