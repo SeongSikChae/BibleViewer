@@ -5,7 +5,10 @@ using System.IO;
 
 namespace BibleViewer.Store.Migrations
 {
+	using BibleViewer.Entity;
 	using Context;
+	using System.IO.Compression;
+	using System.Linq;
 
 	public static class Migrator
 	{
@@ -24,13 +27,28 @@ namespace BibleViewer.Store.Migrations
 				}
 			}
 
-			if (dir.Exists)
-				dir.Delete(true);
-			else 
+			if (!dir.Exists)
 				dir.Create();
+			else
+			{
+				foreach (DirectoryInfo childDir in dir.GetDirectories("*", SearchOption.TopDirectoryOnly))
+					childDir.Delete(true);
+				foreach (FileInfo f in dir.GetFiles("*", SearchOption.TopDirectoryOnly))
+				{
+					if (!f.Name.EndsWith(".zip"))
+						f.Delete();
+				}
+			}
 
 			BibleContext context = serviceProvider.GetRequiredService<BibleContext>();
 			context.Database.MigrateAsync();
+
+			foreach (BibleType bibleType in context.BibleType.ToList())
+			{
+				FileInfo dataFile = dir.GetFileInfo($"{bibleType.Code}.zip");
+				if (dataFile.Exists)
+					ZipFile.ExtractToDirectory(dataFile.FullName, dir.GetChildDirectoryInfo(bibleType.Code).FullName);
+			}
 
 			YamlDotNet.Serialization.Serializer serializer = new YamlDotNet.Serialization.Serializer();
 			using (StreamWriter writer = migrateInfoFile.CreateText())
