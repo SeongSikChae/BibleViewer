@@ -3,7 +3,6 @@ using Lucene.Net.Analysis;
 using Lucene.Net.Analysis.Standard;
 using Lucene.Net.Documents;
 using Lucene.Net.Index;
-using Lucene.Net.QueryParsers.Classic;
 using Lucene.Net.Search;
 using Lucene.Net.Store;
 using System;
@@ -190,6 +189,25 @@ namespace BibleViewer.Store
 					fsDirectory.Dispose();
 					GC.SuppressFinalize(this);
 				}
+			}
+		}
+
+		public sealed class NullBibleStore : IBibleStore
+		{
+			public void Dispose()
+			{
+			}
+
+			public IEnumerable<BibleChapter> GetChaters()
+			{
+				BibleChapter chapter = new BibleChapter(1);
+				chapter.Lines.Add(1);
+				return [chapter];
+			}
+
+			public SortedSet<BibleBody> Search(ISearchQuery query)
+			{
+				return [new BibleBody(1, 1, string.Empty)];
 			}
 		}
 	}
