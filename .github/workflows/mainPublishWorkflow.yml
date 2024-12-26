@@ -41,7 +41,7 @@ jobs:
         mkdir __temp || true
         mkdir archive || true
         cd __temp
-        cp ../BibleViewer/bin/Release/net8.0/win-x64/publish/* . -r
+        cp ../BibleViewer/bin/Release/net8.0-windows7.0/win-x64/publish/* . -r
         zip -r ../archive/BibleViewer-Win64.zip .
         cd ..
         rm -rf __temp
@@ -51,7 +51,7 @@ jobs:
         mkdir __temp || true
         mkdir archive || true
         cd __temp
-        cp ../BibleViewer/bin/Release/net8.0/win-x86/publish/* . -r
+        cp ../BibleViewer/bin/Release/net8.0-windows7.0/win-x86/publish/* . -r
         zip -r ../archive/BibleViewer-Win86.zip .
         cd ..
         rm -rf __temp
