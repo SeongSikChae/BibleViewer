@@ -8,6 +8,7 @@
 		<ApplicationIcon>bible.ico</ApplicationIcon>
 		<Revision></Revision>
 		<EnableWindowsTargeting>true</EnableWindowsTargeting>
+		<Version>1.0.1</Version>
 	</PropertyGroup>
 
 	<ItemGroup>
