@@ -132,7 +132,7 @@ namespace BibleViewer.Forms
 				if (match.Success)
 				{
 					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
-					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value));
+					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value) || item.Name.Equals(match.Groups["Subject"].Value));
 					if (bibleSubject is null)
 					{
 						logger.Error("BibleSubject NotFound : {0}", match.Groups["Subject"].Value);
@@ -149,7 +149,7 @@ namespace BibleViewer.Forms
 				else if (match2.Success)
 				{
 					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
-					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match2.Groups["Subject"].Value));
+					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match2.Groups["Subject"].Value) || item.Name.Equals(match2.Groups["Subject"].Value));
 					if (bibleSubject is null)
 					{
 						logger.Error("BibleSubject NotFound : {0}", match2.Groups["Subject"].Value);
