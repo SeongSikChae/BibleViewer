@@ -23,8 +23,12 @@
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Extensions" Version="1.0.0" />
+		<PackageReference Include="Serilog.Enrichers.Caller" Version="1.0.0" />
+		<PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
+		<PackageReference Include="Serilog.Extensions.Logging" Version="9.0.0" />
+		<PackageReference Include="Serilog.Sinks.File.Extensions" Version="1.0.0" />
 		<PackageReference Include="System.Extensions" Version="1.0.0" />
-		<PackageReference Include="System.IO.Extensions" Version="1.0.0" />
 		<PackageReference Include="YamlDotNet" Version="16.3.0" />
 	</ItemGroup>
 

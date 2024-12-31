@@ -1,11 +1,9 @@
-﻿using BibleViewer.Entity;
-using System.Collections.Generic;
-using System.Drawing;
-using System.Text;
-using System.Windows.Forms;
+﻿using System.Text;
 
 namespace BibleViewer.Forms
 {
+	using Entity;
+
 	public partial class DisplayForm : Form
 	{
 		public DisplayForm()
@@ -118,7 +116,7 @@ namespace BibleViewer.Forms
 		{
 			try
 			{
-				viewLabel.Font = new System.Drawing.Font(viewLabel.Font.Name, fontSize);
+				viewLabel.Font = new Font(viewLabel.Font.Name, fontSize);
 			}
 			catch { }
 		}

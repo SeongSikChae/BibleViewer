@@ -10,6 +10,8 @@ namespace BibleViewer
 {
 	using Context;
 	using Forms;
+	using Serilog;
+	using Serilog.Configuration;
 	using Store;
 	using Store.Migrations;
 
@@ -33,6 +35,15 @@ namespace BibleViewer
 				});
 				builder.Services.AddSingleton<MainForm>();
 				builder.Services.AddSingleton<DisplayForm>();
+				builder.Services.AddLogging(configure =>
+				{
+					Serilog.Core.Logger logger = new LoggerConfiguration()
+					.Enrich.WithCaller()
+					.WriteTo.File(".", "BibleViewer.log", Serilog.Events.LogEventLevel.Information, 
+					outputTemplate: Serilog.Configuration.CallerEnricherOutputTemplate.Default,
+					rollingInterval: RollingInterval.Day, retainedFileCountLimit: 5).CreateLogger();
+					configure.AddSerilog(logger);
+				});
 
 				Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 				Application.EnableVisualStyles();

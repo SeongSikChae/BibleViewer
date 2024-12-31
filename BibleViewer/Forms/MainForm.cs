@@ -3,22 +3,19 @@ using BibleViewer.Entity;
 using BibleViewer.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Microsoft.Extensions.Logging;
 using System.Revision;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 
 namespace BibleViewer.Forms
 {
 	public partial class MainForm : Form
 	{
-		public MainForm(BibleContext context, IServiceProvider serviceProvider)
+		public MainForm(BibleContext context, IServiceProvider serviceProvider, ILogger<MainForm> logger)
 		{
 			this.context = context;
 			this.serviceProvider = serviceProvider;
+			this.logger = logger;
 			InitializeComponent();
 			displayBox.DataSource = Screen.AllScreens.ToList();
 			_ = InitializeAsync();
@@ -26,6 +23,7 @@ namespace BibleViewer.Forms
 
 		private readonly BibleContext context;
 		private readonly IServiceProvider serviceProvider;
+		private readonly ILogger<MainForm> logger;
 		private static readonly Regex SearchPattern = new Regex("(?<Subject>\\S+) (?<Chapter>\\d+):(?<StartLine>\\d+)-(?<EndLine>\\d+)");
 		private static readonly Regex SearchPattern2 = new Regex("(?<Subject>\\S+) (?<Chapter>\\d+):(?<Line>\\d+)");
 
@@ -123,7 +121,7 @@ namespace BibleViewer.Forms
 			}
 		}
 
-		private void ShorButton_Click(object sender, EventArgs e)
+		private void ShowButton_Click(object sender, EventArgs e)
 		{
 			SortedSet<BibleBody> bibleBodies = new SortedSet<BibleBody>();
 			BibleSubject bibleSubject = null;
@@ -136,7 +134,10 @@ namespace BibleViewer.Forms
 					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
 					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value));
 					if (bibleSubject is null)
+					{
+						logger.Error("BibleSubject NotFound : {0}", match.Groups["Subject"].Value);
 						return;
+					}
 					int chapter = int.Parse(match.Groups["Chapter"].Value);
 					int startLine = int.Parse(match.Groups["StartLine"].Value);
 					int endLine = int.Parse(match.Groups["EndLine"].Value);
@@ -148,11 +149,14 @@ namespace BibleViewer.Forms
 				else if (match2.Success)
 				{
 					BibleType bibleType = (BibleType)bibleTypeBox.SelectedItem;
-					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match.Groups["Subject"].Value));
+					bibleSubject = context.BibleSubject.FirstOrDefault(item => item.ShortName.Equals(match2.Groups["Subject"].Value));
 					if (bibleSubject is null)
+					{
+						logger.Error("BibleSubject NotFound : {0}", match2.Groups["Subject"].Value);
 						return;
-					int chapter = int.Parse(match.Groups["Chapter"].Value);
-					int line = int.Parse(match.Groups["Line"].Value);
+					}
+					int chapter = int.Parse(match2.Groups["Chapter"].Value);
+					int line = int.Parse(match2.Groups["Line"].Value);
 					ISearchQuery q = new ISearchQuery.NamedQuery(IBibleStore.CHAPTER_FIELD_NAME, new ISearchQuery.RangeQuery(chapter, chapter, true, true));
 					q = new ISearchQuery.BooleanAndQuery(q, new ISearchQuery.NamedQuery(IBibleStore.LINE_FIELD_NAME, new ISearchQuery.RangeQuery(line, line, true, true)));
 					using IBibleStore store = BlbleStoreFactory.Create(new System.IO.DirectoryInfo(IBibleStore.STORE_PATH), bibleType, bibleSubject);
@@ -194,6 +198,7 @@ namespace BibleViewer.Forms
 				bibleBodies = store.Search(q);
 			}
 
+			logger.Information("Bible Search Result : {0}", bibleBodies.Count);
 			if (bibleBodies.Count == 0)
 				return;
 			LinkedList<BibleBody> list = new LinkedList<BibleBody>();
